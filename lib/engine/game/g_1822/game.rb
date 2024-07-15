@@ -288,6 +288,10 @@ module Engine
           },
         ].freeze
 
+        TRAIN_AUTOROUTE_GROUPS = [
+          %w[E],
+        ].freeze
+
         LAYOUT = :flat
 
         SELL_MOVEMENT = :down_share
@@ -1034,7 +1038,13 @@ module Engine
         end
 
         def player_value(player)
-          player.value - @player_debts[player] + tax_haven_value(player)
+          # tax_haven_company.value can sometimes be zero and sometimes the same
+          # as tax_haven_value() (issues #5200 and #11007) because it is only
+          # set in company_status_str, which is only called by some views, so
+          # substract that value and include only the correct calculation
+          tax_haven_val = tax_haven_value(player) - (tax_haven_company&.value || 0)
+
+          player.value - @player_debts[player] + tax_haven_val
         end
 
         def purchasable_companies(entity = nil)
@@ -1952,6 +1962,7 @@ module Engine
 
         def hex_blocked_by_ability?(entity, ability, hex, tile)
           return false if tile.name == 'BC'
+          return false unless hex.tile.color == :white
           return false unless ability.player
           return false if entity.player == ability.player
           return false if ability.hexes.none? { |h| h.id == hex.id }
@@ -2011,10 +2022,12 @@ module Engine
           self.class::PENDING_HOME_TOKENERS
         end
 
-        def share_owning_players
+        def tax_haven_company
           @tax_haven_company ||= company_by_id(self.class::COMPANY_OSTH)
+        end
 
-          if @tax_haven_company&.owned_by_player?
+        def share_owning_players
+          if tax_haven_company&.owned_by_player?
             [*@players, @tax_haven]
           else
             @players
